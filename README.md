@@ -19,6 +19,19 @@ This simulator is developed as a part of the [ASTRA-sim](https://github.com/astr
 | format | [![format](https://github.com/astra-sim/astra-network-analytical/actions/workflows/check-clang-format.yml/badge.svg?branch=main)](https://github.com/astra-sim/astra-network-analytical/actions/workflows/check-clang-format.yml) |
 
 ## Documentation
+
+The fork's [EventQueue](include/astra-network-analytical/common/EventQueue.h) adds
+`peek_next_time()` and `step_at(expected_time)` for safe-point control of the
+existing queue. Time remains uint64 nanoseconds. A successful step invokes one
+native callback, preserving same-time FIFO and any newly scheduled work; the
+original `proceed()` still drains the entire next-time group. A callback can
+dispatch several higher-level operations: this API does not split those operations
+or supply a global time coordinator. Query/step distinguish empty, busy, and invalid
+time states. Use a single caller; new API reentry returns Busy, while legacy
+`proceed()`/`add_current_time()` reentered from a new step terminate. Throwing
+callbacks retain the original noexcept contract. No recovery after termination or
+concurrent queue access is supported.
+
 - [Analytical Network Simulator Documentation](https://astra-sim.github.io/astra-network-analytical-docs/index.html)
 - [ASTRA-sim Documentation](https://astra-sim.github.io/astra-sim-docs/index.html)
 

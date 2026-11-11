@@ -44,6 +44,11 @@ class EventList {
     void invoke_events() noexcept;
 
   private:
+    friend class EventQueue;
+
+    [[nodiscard]] bool empty() const noexcept;
+    void invoke_one_event() noexcept;
+
     /// event time of the event list
     EventTime event_time;
 
