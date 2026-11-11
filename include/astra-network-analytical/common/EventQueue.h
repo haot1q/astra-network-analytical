@@ -10,6 +10,16 @@ LICENSE file in the root directory of this source tree.
 
 namespace NetworkAnalytical {
 
+enum class EventPeekStatus { Ready, Empty, Busy, PastEvent };
+
+struct EventPeekResult {
+    EventPeekStatus status;
+    /// Nanoseconds; meaningful only when status is Ready, zero otherwise.
+    EventTime time;
+};
+
+enum class EventStepStatus { Executed, Empty, Busy, PastTime, TimeMismatch };
+
 /**
  * EventQueue manages scheduled EventLists.
  */
@@ -29,7 +39,7 @@ class EventQueue {
 
     /**
      * Add const to current event time.
-     * Used for waiting idle queue more faster. 
+     * Used for waiting idle queue more faster.
      * @return current event time + 100
      */
     void add_current_time() noexcept;
@@ -51,6 +61,22 @@ class EventQueue {
     void proceed() noexcept;
 
     /**
+     * Inspect the next native callback time without changing the queue or clock.
+     * Single-caller safe-point API: dispatch reentry is Busy, not Empty.
+     */
+    [[nodiscard]] EventPeekResult peek_next_time() const noexcept;
+
+    /**
+     * Invoke exactly one native callback at expected_time (nanoseconds).
+     * Rejected calls leave the queue and clock unchanged. The remaining FIFO
+     * suffix stays pending, including callbacks newly scheduled at this time.
+     * New API reentry returns Busy. Calling legacy proceed/add_current_time
+     * inside this callback terminates; callback exceptions retain the native
+     * noexcept contract. This API does not provide concurrent queue access.
+     */
+    [[nodiscard]] EventStepStatus step_at(EventTime expected_time) noexcept;
+
+    /**
      * Schedule an event with a given event time.
      *
      * @param event_time time of event
@@ -60,6 +86,11 @@ class EventQueue {
     void schedule_event(EventTime event_time, Callback callback, CallbackArg callback_arg) noexcept;
 
   private:
+    enum class DispatchMode { Idle, LegacyProceed, SingleStep };
+
+    /// Synchronous reentry guard, not a thread synchronization primitive.
+    DispatchMode dispatch_mode = DispatchMode::Idle;
+
     /// current time of the event queue
     EventTime current_time;
 

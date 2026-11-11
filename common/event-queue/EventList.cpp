@@ -29,7 +29,16 @@ void EventList::add_event(const Callback callback, const CallbackArg callback_ar
 void EventList::invoke_events() noexcept {
     // invoke all events in the event list
     while (!events.empty()) {
-        events.front().invoke_event();
-        events.pop_front();
+        invoke_one_event();
     }
+}
+
+bool EventList::empty() const noexcept {
+    return events.empty();
+}
+
+void EventList::invoke_one_event() noexcept {
+    assert(!events.empty());
+    events.front().invoke_event();
+    events.pop_front();
 }

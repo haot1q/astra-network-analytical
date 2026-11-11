@@ -5,6 +5,7 @@ LICENSE file in the root directory of this source tree.
 
 #include "common/EventQueue.h"
 #include <cassert>
+#include <exception>
 
 using namespace NetworkAnalytical;
 
@@ -18,8 +19,11 @@ EventTime EventQueue::get_current_time() const noexcept {
 }
 
 void EventQueue::add_current_time() noexcept {
+    if (dispatch_mode == DispatchMode::SingleStep) {
+        std::terminate();
+    }
     current_time = current_time + 1000000;
-  }
+}
 
 bool EventQueue::finished() const noexcept {
     // check whether event queue is empty
@@ -27,6 +31,9 @@ bool EventQueue::finished() const noexcept {
 }
 
 void EventQueue::proceed() noexcept {
+    if (dispatch_mode == DispatchMode::SingleStep) {
+        std::terminate();
+    }
     // to proceed, next event should exist
     assert(!finished());
 
@@ -38,10 +45,57 @@ void EventQueue::proceed() noexcept {
     current_time = current_event_list.get_event_time();
 
     // invoke events
+    const auto previous_mode = dispatch_mode;
+    dispatch_mode = DispatchMode::LegacyProceed;
     current_event_list.invoke_events();
+    dispatch_mode = previous_mode;
 
     // drop processed event list
     event_queue.pop_front();
+}
+
+EventPeekResult EventQueue::peek_next_time() const noexcept {
+    if (dispatch_mode != DispatchMode::Idle) {
+        return {EventPeekStatus::Busy, 0};
+    }
+    if (event_queue.empty()) {
+        return {EventPeekStatus::Empty, 0};
+    }
+    const auto next_time = event_queue.front().get_event_time();
+    if (next_time < current_time) {
+        return {EventPeekStatus::PastEvent, 0};
+    }
+    return {EventPeekStatus::Ready, next_time};
+}
+
+EventStepStatus EventQueue::step_at(const EventTime expected_time) noexcept {
+    if (dispatch_mode != DispatchMode::Idle) {
+        return EventStepStatus::Busy;
+    }
+    if (expected_time < current_time) {
+        return EventStepStatus::PastTime;
+    }
+    if (event_queue.empty()) {
+        return EventStepStatus::Empty;
+    }
+    const auto selected = event_queue.begin();
+    const auto next_time = selected->get_event_time();
+    if (next_time < current_time) {
+        return EventStepStatus::PastTime;
+    }
+    if (expected_time != next_time) {
+        return EventStepStatus::TimeMismatch;
+    }
+
+    dispatch_mode = DispatchMode::SingleStep;
+    current_time = next_time;
+    // Keep this list resident so same-time callback additions retain native FIFO.
+    selected->invoke_one_event();
+    if (selected->empty()) {
+        event_queue.erase(selected);
+    }
+    dispatch_mode = DispatchMode::Idle;
+    return EventStepStatus::Executed;
 }
 
 void EventQueue::schedule_event(const EventTime event_time,
